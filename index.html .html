@@ -1,0 +1,538 @@
+import streamlit as st
+import pandas as pd
+import plotly.graph_objects as go
+import random
+from datetime import datetime
+import pytz
+import time
+import io
+
+# Configure page
+st.set_page_config(
+    page_title="🎯 Gerador de Sinais Aleatórios",
+    page_icon="🎯",
+    layout="centered",
+    initial_sidebar_state="collapsed"
+)
+
+# Custom CSS
+st.markdown("""
+<style>
+    .main {
+        background: linear-gradient(135deg, #1a2a5a, #0d122b);
+        color: #e0e0e0;
+    }
+    
+    .stButton > button {
+        background: linear-gradient(145deg, #FFD700, #FFA500);
+        color: #0d122b;
+        font-weight: bold;
+        border: none;
+        border-radius: 10px;
+        padding: 15px 30px;
+        font-size: 18px;
+        box-shadow: 0 5px 15px rgba(255, 215, 0, 0.3);
+        transition: all 0.3s ease;
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(255, 215, 0, 0.4);
+    }
+    
+    .signal-card {
+        background: rgba(26, 34, 74, 0.9);
+        border: 2px solid #FFD700;
+        border-radius: 15px;
+        padding: 30px;
+        text-align: center;
+        margin: 20px 0;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    }
+    
+    .color-display {
+        width: 120px;
+        height: 120px;
+        border-radius: 50%;
+        margin: 20px auto;
+        border: 4px solid #FFD700;
+        box-shadow: 0 0 30px rgba(255, 215, 0, 0.3);
+    }
+    
+    .stat-card {
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid #4a5c9f;
+        border-radius: 10px;
+        padding: 20px;
+        text-align: center;
+        margin: 10px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# Initialize session state
+if 'signal_history' not in st.session_state:
+    st.session_state.signal_history = []
+if 'signal_stats' not in st.session_state:
+    st.session_state.signal_stats = {'Verde': 0, 'Preto': 0, 'Branco': 0}
+if 'total_signals' not in st.session_state:
+    st.session_state.total_signals = 0
+if 'strategy_data' not in st.session_state:
+    st.session_state.strategy_data = None
+if 'use_strategy' not in st.session_state:
+    st.session_state.use_strategy = False
+if 'last_signal_time' not in st.session_state:
+    st.session_state.last_signal_time = 0
+
+# Sample data embedded in the code
+def get_sample_data():
+    """Return sample strategy data"""
+    sample_csv = """Número,Cor,Hora/Minuto,Data
+0,white,12:55,12:55:31
+14,black,12:55,12:55:01
+13,black,12:54,12:54:30
+5,red,12:54,12:54
+11,black,12:53,12:53:30
+13,black,12:53,12:53
+13,black,12:52,12:52:30
+13,black,12:52,12:52
+2,red,12:51,12:51:30
+8,black,12:51,12:51
+11,black,12:50,12:50:30
+6,red,12:50,12:50
+13,black,12:49,12:49:30
+11,black,12:49,12:49
+7,red,12:48,12:48:30
+5,red,12:48,12:48
+3,red,12:47,12:47:30
+1,red,12:47,12:47
+0,white,12:46,12:46:30
+9,black,12:46,12:46
+2,red,12:45,12:45:30
+10,black,12:44,12:44:59
+14,black,12:44,12:44:29
+14,black,12:43,12:43:59
+9,black,12:43,12:43:29
+13,black,12:42,12:42:59
+7,red,12:42,12:42:29
+11,black,12:41,12:41:59
+2,red,12:41,12:41:29
+9,black,12:40,12:40:59
+9,black,12:40,12:40:29
+2,red,12:39,12:39:59
+8,black,12:39,12:39:29
+8,black,12:38,12:38:59
+13,black,12:38,12:38:29
+10,black,12:37,12:37:59
+11,black,12:37,12:37:29
+10,black,12:36,12:36:59
+12,black,12:36,12:36:29
+11,black,12:35,12:35:58
+5,red,12:35,12:35:28
+3,red,12:34,12:34:58
+2,red,12:34,12:34:28
+4,red,12:33,12:33:58
+5,red,12:33,12:33:28
+12,black,12:31,12:31:12
+10,black,12:30,12:30:42
+3,red,12:30,12:30:12
+13,black,12:29,12:29:42
+4,red,12:29,12:29:12
+5,red,12:28,12:28:42
+4,red,12:28,12:28:12
+5,red,12:27,12:27:42
+12,black,12:27,12:27:12
+12,black,12:26,12:26:42
+8,black,12:26,12:26:11
+13,black,12:25,12:25:41
+4,red,12:25,12:25:11
+0,white,12:24,12:24:41
+3,red,12:24,12:24:11
+7,red,12:23,12:23:41
+10,black,12:23,12:23:11
+2,red,12:22,12:22:41
+5,red,12:22,12:22:11
+6,red,12:21,12:21:41
+1,red,12:21,12:21:11
+4,red,12:20,12:20:41
+14,black,12:20,12:20:11
+2,red,12:19,12:19:40"""
+    
+    return pd.read_csv(io.StringIO(sample_csv))
+
+# Helper function to analyze strategy patterns
+def analyze_strategy_patterns(df, result_column):
+    """Analyze patterns in uploaded CSV with detailed statistics"""
+    try:
+        # Clean and normalize the result column
+        results = df[result_column].astype(str).str.lower().str.strip()
+        
+        # Count occurrences with detailed mapping
+        verde_count = results.str.contains('verde|green|v(?![a-z])').sum()
+        preto_count = results.str.contains('preto|black|p(?![a-z])').sum()
+        vermelho_count = results.str.contains('vermelho|red|r(?![a-z])').sum()
+        branco_count = results.str.contains('branco|white|w(?![a-z])').sum()
+        
+        # Combine preto and vermelho as "Preto" (since both are dark colors)
+        total_preto = preto_count + vermelho_count
+        
+        total = len(results)
+        
+        if total == 0:
+            return {
+                'Verde': 0.485, 'Preto': 0.485, 'Branco': 0.03,
+                'counts': {'Verde': 0, 'Preto': 0, 'Branco': 0},
+                'total': 0
+            }
+        
+        # Calculate probabilities
+        verde_prob = verde_count / total if verde_count > 0 else 0.001
+        preto_prob = total_preto / total if total_preto > 0 else 0.001
+        branco_prob = branco_count / total if branco_count > 0 else 0.001
+        
+        # Ensure probabilities sum to 1
+        total_prob = verde_prob + preto_prob + branco_prob
+        if total_prob > 0:
+            verde_prob /= total_prob
+            preto_prob /= total_prob
+            branco_prob /= total_prob
+        
+        return {
+            'Verde': verde_prob,
+            'Preto': preto_prob,
+            'Branco': branco_prob,
+            'counts': {
+                'Verde': int(verde_count),
+                'Preto': int(total_preto),
+                'Branco': int(branco_count)
+            },
+            'total': total,
+            'raw_data': df.to_dict('records')
+        }
+        
+    except Exception as e:
+        return {
+            'Verde': 0.485, 'Preto': 0.485, 'Branco': 0.03,
+            'counts': {'Verde': 0, 'Preto': 0, 'Branco': 0},
+            'total': 0,
+            'error': str(e)
+        }
+
+def generate_signal(signals):
+    """Generate a random signal based on probabilities"""
+    random_num = random.random() * 100
+    cumulative = 0
+    
+    for signal in signals:
+        cumulative += signal['probability']
+        if random_num <= cumulative:
+            return signal
+    
+    return signals[0]  # Fallback
+
+def add_to_history(signal):
+    """Add signal to history"""
+    st.session_state.total_signals += 1
+    st.session_state.signal_stats[signal['name']] += 1
+    
+    # Get Brasília timezone
+    brasilia_tz = pytz.timezone('America/Sao_Paulo')
+    brasilia_time = datetime.now(brasilia_tz)
+    
+    history_item = {
+        'number': st.session_state.total_signals,
+        'name': signal['name'],
+        'color': signal['color'],
+        'time': brasilia_time.strftime('%H:%M:%S'),
+        'date': brasilia_time.strftime('%d/%m/%Y'),
+        'probability': signal['probability']
+    }
+    
+    st.session_state.signal_history.insert(0, history_item)
+    
+    # Keep only last 10 results
+    if len(st.session_state.signal_history) > 10:
+        st.session_state.signal_history = st.session_state.signal_history[:10]
+
+# Main header
+st.markdown("""
+<div style='text-align: center; padding: 20px;'>
+    <h1 style='color: #FFD700; font-size: 3em; text-shadow: 2px 2px 8px rgba(0, 0, 0, 0.7);'>
+        🎯 Gerador de Sinais
+    </h1>
+    <p style='color: #ccc; font-size: 1.2em;'>
+        Simulador Educacional de Probabilidades
+    </p>
+</div>
+""", unsafe_allow_html=True)
+
+# Strategy upload section
+st.markdown("### 📊 Estratégia Personalizada")
+
+col1, col2 = st.columns([2, 1])
+
+with col1:
+    uploaded_file = st.file_uploader(
+        "Envie um arquivo CSV com histórico de sinais para análise de padrões",
+        type=['csv'],
+        key="strategy_csv"
+    )
+
+with col2:
+    if st.button("📋 Usar Dados de Exemplo"):
+        # Load sample data
+        try:
+            sample_df = get_sample_data()
+            st.session_state.strategy_data = sample_df
+            st.success("✅ Dados de exemplo carregados!")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Erro ao carregar dados de exemplo: {str(e)}")
+
+# Process uploaded file or existing strategy data
+if uploaded_file is not None:
+    try:
+        # Read CSV file
+        df = pd.read_csv(uploaded_file)
+        st.session_state.strategy_data = df
+    except Exception as e:
+        st.error(f"Erro ao processar arquivo: {str(e)}")
+        df = None
+elif st.session_state.strategy_data is not None:
+    df = st.session_state.strategy_data
+else:
+    df = None
+
+if df is not None:
+    try:
+        # Display basic info about the uploaded file
+        st.success(f"✅ Arquivo carregado: {len(df)} registros")
+        
+        # Show column options for user to select
+        st.markdown("**Selecione as colunas relevantes:**")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            result_column = st.selectbox(
+                "Coluna com resultados (Verde/Preto/Branco):",
+                df.columns.tolist(),
+                key="result_col"
+            )
+        
+        with col2:
+            time_column = st.selectbox(
+                "Coluna com horário (opcional):",
+                ['Nenhuma'] + df.columns.tolist(),
+                key="time_col"
+            )
+        
+        # Analyze patterns if result column is selected
+        if result_column:
+            strategy_analysis = analyze_strategy_patterns(df, result_column)
+            st.session_state.strategy_analysis = strategy_analysis
+            
+            # Display detailed analysis
+            st.markdown("**📈 Análise Detalhada dos Padrões:**")
+            
+            # Summary metrics
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                verde_pct = strategy_analysis['Verde'] * 100
+                verde_count = strategy_analysis['counts']['Verde']
+                st.metric("🟢 Verde", f"{verde_pct:.1f}%", f"{verde_count} ocorrências")
+            
+            with col2:
+                preto_pct = strategy_analysis['Preto'] * 100
+                preto_count = strategy_analysis['counts']['Preto']
+                st.metric("⚫ Preto/Red", f"{preto_pct:.1f}%", f"{preto_count} ocorrências")
+            
+            with col3:
+                branco_pct = strategy_analysis['Branco'] * 100
+                branco_count = strategy_analysis['counts']['Branco']
+                st.metric("⚪ Branco", f"{branco_pct:.1f}%", f"{branco_count} ocorrências")
+            
+            with col4:
+                total_records = strategy_analysis['total']
+                st.metric("📊 Total", f"{total_records}", "registros")
+            
+            # Visual chart of the distribution
+            if total_records > 0:
+                fig_strategy = go.Figure(data=[go.Bar(
+                    x=['Verde', 'Preto/Red', 'Branco'],
+                    y=[verde_count, preto_count, branco_count],
+                    marker_color=['#00FF00', '#000000', '#FFFFFF'],
+                    text=[f"{verde_count} ({verde_pct:.1f}%)", 
+                          f"{preto_count} ({preto_pct:.1f}%)", 
+                          f"{branco_count} ({branco_pct:.1f}%)"],
+                    textposition='auto',
+                )])
+                
+                fig_strategy.update_layout(
+                    title="Distribuição dos Resultados no Seu Histórico",
+                    xaxis_title="Cores",
+                    yaxis_title="Quantidade",
+                    height=400,
+                    showlegend=False
+                )
+                
+                st.plotly_chart(fig_strategy, use_container_width=True)
+            
+            # Option to use strategy
+            use_strategy = st.checkbox("🎯 Usar probabilidades baseadas no histórico")
+            st.session_state.use_strategy = use_strategy
+            
+    except Exception as e:
+        st.error(f"Erro ao processar dados: {str(e)}")
+
+# Signal configuration based on strategy
+if st.session_state.use_strategy and hasattr(st.session_state, 'strategy_analysis'):
+    analysis = st.session_state.strategy_analysis
+    signals = [
+        {'name': 'Verde', 'color': '#00FF00', 'probability': analysis['Verde'] * 100},
+        {'name': 'Preto', 'color': '#000000', 'probability': analysis['Preto'] * 100},
+        {'name': 'Branco', 'color': '#FFFFFF', 'probability': analysis['Branco'] * 100}
+    ]
+    st.info("🎯 Usando probabilidades baseadas no seu histórico!")
+else:
+    # Default probabilities
+    signals = [
+        {'name': 'Verde', 'color': '#00FF00', 'probability': 48.5},
+        {'name': 'Preto', 'color': '#000000', 'probability': 48.5},
+        {'name': 'Branco', 'color': '#FFFFFF', 'probability': 3.0}
+    ]
+
+# Signal display area
+col1, col2, col3 = st.columns([1, 2, 1])
+
+with col2:
+    # Current signal display
+    if st.session_state.signal_history:
+        last_signal = st.session_state.signal_history[0]
+        st.markdown(f"""
+        <div class='signal-card'>
+            <div class='color-display' style='background-color: {last_signal['color']};'></div>
+            <h2 style='color: {last_signal['color']}; margin: 15px 0;'>{last_signal['name']}</h2>
+            <p style='color: #ccc; font-size: 1.1em;'>
+                Probabilidade: {last_signal['probability']}%<br/>
+                Gerado às: {last_signal['time']} (Horário de Brasília)<br/>
+                Data: {last_signal.get('date', '')}
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <div class='signal-card'>
+            <div class='color-display' style='background-color: #666;'></div>
+            <h2 style='color: #ccc; margin: 15px 0;'>Aguardando...</h2>
+            <p style='color: #888;'>Clique no botão para gerar um sinal</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+# Generate button
+st.markdown("<div style='text-align: center; margin: 30px 0;'>", unsafe_allow_html=True)
+if st.button("🎲 Gerar Novo Sinal", key="generate_signal", type="primary"):
+    signal = generate_signal(signals)
+    add_to_history(signal)
+    st.session_state.last_signal_time = time.time()
+    st.rerun()
+st.markdown("</div>", unsafe_allow_html=True)
+
+# Statistics
+if st.session_state.total_signals > 0:
+    st.markdown("### 📊 Estatísticas")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    for i, (name, count) in enumerate(st.session_state.signal_stats.items()):
+        percentage = (count / st.session_state.total_signals) * 100
+        
+        with [col1, col2, col3][i]:
+            emoji = "🟢" if name == "Verde" else "⚫" if name == "Preto" else "⚪"
+            st.markdown(f"""
+            <div class='stat-card'>
+                <h3 style='color: #FFD700; margin-bottom: 10px;'>{emoji} {name}</h3>
+                <h2 style='font-size: 2em; margin: 5px 0;'>{count}</h2>
+                <p style='color: #ccc;'>{percentage:.1f}%</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+    # Charts
+    st.markdown("### 📈 Gráficos")
+    
+    # Pie chart
+    fig_pie = go.Figure(data=[go.Pie(
+        labels=list(st.session_state.signal_stats.keys()),
+        values=list(st.session_state.signal_stats.values()),
+        hole=0.3,
+        marker_colors=['#00FF00', '#000000', '#FFFFFF'],
+        textfont=dict(color='white', size=14)
+    )])
+    
+    fig_pie.update_layout(
+        title="Distribuição dos Resultados",
+        title_font_color='#FFD700',
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color='#e0e0e0')
+    )
+    
+    st.plotly_chart(fig_pie, use_container_width=True)
+
+# History
+if st.session_state.signal_history:
+    st.markdown("### 📋 Últimos Resultados")
+    
+    # Display history in a nice format
+    for item in st.session_state.signal_history:
+        col1, col2, col3, col4, col5 = st.columns([1, 2, 1, 2, 2])
+        
+        with col1:
+            st.markdown(f"**#{item['number']}**")
+        with col2:
+            st.markdown(f"<span style='color: {item['color']}; font-weight: bold;'>{item['name']}</span>", 
+                       unsafe_allow_html=True)
+        with col3:
+            st.markdown(f"{item['probability']}%")
+        with col4:
+            st.markdown(f"{item.get('date', '')}")
+        with col5:
+            st.markdown(f"{item['time']} (BR)")
+
+# Auto-generate section
+st.markdown("---")
+st.markdown("### ⚡ Modo Automático")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    auto_generate = st.checkbox("🔄 Gerar automaticamente a cada 30 segundos")
+
+with col2:
+    if auto_generate:
+        st.info("🔄 Modo automático ativado!")
+
+# Auto-generate logic with proper timer
+if auto_generate:
+    current_time = time.time()
+    
+    # Check if 30 seconds have passed
+    if current_time - st.session_state.last_signal_time >= 30:
+        signal = generate_signal(signals)
+        add_to_history(signal)
+        st.session_state.last_signal_time = current_time
+        st.rerun()
+    else:
+        # Show countdown
+        remaining = 30 - (current_time - st.session_state.last_signal_time)
+        st.info(f"⏰ Próximo sinal em: {remaining:.0f} segundos")
+        time.sleep(1)
+        st.rerun()
+
+# Disclaimer
+st.markdown("---")
+st.warning("""
+⚠️ **Aviso Educacional:** Esta é uma ferramenta educacional para demonstrar conceitos de 
+probabilidade e aleatoriedade. Os resultados são completamente aleatórios e não têm relação 
+com jogos reais, apostas ou plataformas comerciais.
+""")
